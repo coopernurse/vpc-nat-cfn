@@ -23,6 +23,33 @@ Parameters:
     Type: String
     Default: t3.nano
 
+Outputs:
+  VPC:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub "${AWS::StackName}-VPC"
+  PublicSubnet:
+    Description: PublicSubnet ID
+    Value: !Ref PublicSubnet
+    Export:
+      Name: !Sub "${AWS::StackName}-PublicSubnet"
+  PrivateSubnetA:
+    Description: PrivateSubnetA ID
+    Value: !Ref PrivateSubnetA
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnetA"
+  PrivateSubnetB:
+    Description: PrivateSubnetB ID
+    Value: !Ref PrivateSubnetB
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnetB"
+  PrivateSubnetC:
+    Description: PrivateSubnetC ID
+    Value: !Ref PrivateSubnetC
+    Export:
+      Name: !Sub "${AWS::StackName}-PrivateSubnetC"
+      
 Resources:
   VPC:
     Type: AWS::EC2::VPC
