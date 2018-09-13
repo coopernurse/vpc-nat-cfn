@@ -1,0 +1,216 @@
+Description: Creates VPC with 3 private subnets and a bastion host
+
+Parameters:
+  # Amazon provides NAT AMIs to use - search for: amzn-ami-vpc-nat-hvm-2018
+  # See: https://docs.aws.amazon.com/vpc/latest/userguide/VPC_NAT_Instance.html#basics
+  AMI:
+    Description: AMI ID to use for bastion (assumes Amazon Linux 2)
+    Type: String
+    Default: ami-40d1f038
+  SSHKeyName:
+    Description: SSH key name to use with bastion host
+    Type: String
+  SSHAllowCIDR:
+    Description: CIDR block to grant access to the bastion host
+    Type: String
+    Default: "0.0.0.0/0"
+  VolumeSize:
+    Description: Volume size (GB)
+    Type: String
+    Default: 10
+  InstanceType:
+    Description: Instance type to use for bastion
+    Type: String
+    Default: t3.nano
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 172.20.0.0/16
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-vpc"
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-igw"      
+  AttachInternetGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public-route-table"      
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 172.20.1.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public"      
+  PublicInternetGatewayRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachInternetGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+  PublicRouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+# 
+# For posterity - this is how to use the stock Amazon NatGateway
+# which is about 9x the price of a t3.nano but probably worth it
+# on production systems since it's fully managed and supports > 5Gbps
+#
+#  NATGatewayEIP:
+#    Type: AWS::EC2::EIP
+#    Properties:
+#      Domain: vpc
+#  NATGateway:
+#    Type: AWS::EC2::NatGateway
+#    DependsOn: AttachInternetGateway
+#    Properties:
+#      AllocationId: !GetAtt [NATGatewayEIP, AllocationId]
+#      SubnetId: !Ref PublicSubnet
+#      Tags:
+#        - Key: Name
+#          Value: !Sub "${AWS::StackName}-nat"
+      
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-route-table"      
+  PrivateNATGatewayRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachInternetGateway
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      InstanceId: !Ref BastionInstance
+      # use this if you uncomment the NATGateway bits
+      #NatGatewayId: !Ref NATGateway
+  PrivateSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 172.20.16.0/20
+      AvailabilityZone: us-west-2a
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-a"      
+  PrivateSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 172.20.32.0/20
+      AvailabilityZone: us-west-2b
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-b"
+  PrivateSubnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 172.20.48.0/20
+      AvailabilityZone: us-west-2c
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-private-c"      
+  PrivateSubnetARouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetA
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnetBRouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetB
+      RouteTableId: !Ref PrivateRouteTable
+  PrivateSubnetCRouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnetC
+      RouteTableId: !Ref PrivateRouteTable
+
+  BastionEIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  BastionEIPAssoc:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      EIP: !Ref BastionEIP
+      InstanceId: !Ref BastionInstance
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: SG for bastion host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref SSHAllowCIDR
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 172.20.0.0/16
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 172.20.0.0/16
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 172.20.0.0/16          
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-bastion-sg"          
+  BastionInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AMI
+      KeyName: !Ref SSHKeyName
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref BastionSecurityGroup
+      Monitoring: true
+      SourceDestCheck: false
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-bastion-nat"      
+      UserData:
+        "Fn::Base64": !Sub |
+          #!/bin/bash -xe
+          yum update -y
+          # set hostname
+          hostname="${AWS::StackName}-bastion"
+          hostname $hostname
+          echo $hostname > /etc/hostname

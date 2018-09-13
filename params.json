@@ -1,0 +1,14 @@
+[
+    {
+        "ParameterKey": "AMI",
+        "ParameterValue": "ami-40d1f038"
+    },
+    {
+        "ParameterKey": "SSHKeyName",
+        "ParameterValue": ""
+    },
+    {
+        "ParameterKey": "SSHAllowCIDR",
+        "ParameterValue": ""
+    }
+]
